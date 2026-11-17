@@ -5,6 +5,19 @@
 ## 模块与业务流程
 数据接入（JSON/CSV、字段验证、批次指纹）→ 参数化分析（异步 Python worker）→ 结果复核（指标、图形、明细、解释、批准）→ 定时分发（本地收件箱、CSV/JSON、SHA256）；另有业务总览和审计轨迹。
 三个贯穿全栈的实体：Dataset 数据批次、Job 分析任务、Report 分发计划；辅助 User、Audit、Delivery。
+主备记录器读数不一致时，先在「双源核对」建立 **ReconSheet 双源核对单**：开单固定两源预期点位与来源键对应关系 → 逐源接收读数（相同读数只用一次）→ 缺点或异值逐点裁定（保留两份原值、选定采用值）→ 全部点位有结论后封单，生成可用于分析的可调查批次。裁定后晚到的读数只记差异，不改已采用值；封单与接入并发时，每个点位要么纳入封单批次，要么整条转差异。采用值写入后中断可恢复原单，重试不新增核对单或批次，旧执行不覆盖新裁定。原有直接接入 `/datasets` 保持可用。
+
+## 双源核对接口
+|方法|路径|说明|
+|---|---|---|
+|GET/POST|`/recon`|列出 / 开单；同名同定义重试返回原单（200），不新增|
+|GET|`/recon/{id}`|核对单全量：点位、两源原值、裁定、采用值、差异、执行记录、批次|
+|POST|`/recon/{id}/readings`|逐源接收，body `{source: primary\|backup, readings:[{key,value}]}`|
+|POST|`/recon/{id}/points/{point_id}/decision`|裁定 `{decision: primary\|backup\|exclude, note}`，排除必填依据|
+|GET|`/recon/{id}/points/{point_id}`|单点采用依据与差异追溯|
+|POST|`/recon/{id}/seal`|封单并生成可调查批次；未全部裁定返回 409|
+
+幂等：以上写操作接受 `Idempotency-Key` 请求头或 body 的 `request_id`，同号重试返回首次结果。
 
 ## 快速启动
 ```bash
